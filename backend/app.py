@@ -231,6 +231,18 @@ def handle_select_case(data):
         logger.error(f'Error selecting case: {e}', exc_info=True)
         emit('error', {'message': 'Failed to select case'})
 
+@socketio.on('update_animation_config')
+def handle_animation_config(data):
+    """Handle animation configuration updates."""
+    try:
+        config = data.get('config')
+        # Broadcast the new config to all clients
+        emit('animation_config', {'config': config}, broadcast=True)
+        logger.info(f'Animation config updated: {config}')
+    except Exception as e:
+        logger.error(f'Error updating animation config: {e}', exc_info=True)
+        emit('error', {'message': 'Failed to update animation config'})
+
 @socketio.on('open_case')
 def handle_open_case(data):
     """Handle opening a case."""
