@@ -3,6 +3,153 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { socket } from '../services/socketService';
 
+const defaultAnimationConfig = {
+  initialPause: 1500,
+  zoomDuration: 1200,
+  preopenPause: 800,
+  revealDuration: 2000,
+  finalPause: 500,
+};
+
+const AnimationConfig = ({ onSave }) => {
+  const [config, setConfig] = useState(defaultAnimationConfig);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const handleConfigChange = (key, value) => {
+    const numValue = Math.max(0, Math.min(10000, parseInt(value) || 0));
+    setConfig(prev => ({ ...prev, [key]: numValue }));
+  };
+
+  const handlePresetClick = (preset) => {
+    switch(preset) {
+      case 'fast':
+        setConfig({
+          initialPause: 500,
+          zoomDuration: 400,
+          preopenPause: 300,
+          revealDuration: 800,
+          finalPause: 200,
+        });
+        break;
+      case 'normal':
+        setConfig(defaultAnimationConfig);
+        break;
+      case 'dramatic':
+        setConfig({
+          initialPause: 2000,
+          zoomDuration: 1500,
+          preopenPause: 1200,
+          revealDuration: 2500,
+          finalPause: 800,
+        });
+        break;
+      default:
+        break;
+    }
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
+      <h3 className="text-xl font-bold mb-4">Animation Settings</h3>
+      
+      <div className="flex gap-4 mb-6">
+        <Button 
+          onClick={() => handlePresetClick('fast')}
+          className="bg-blue-500 hover:bg-blue-700 text-white"
+        >
+          Fast Mode
+        </Button>
+        <Button 
+          onClick={() => handlePresetClick('normal')}
+          className="bg-green-500 hover:bg-green-700 text-white"
+        >
+          Normal Mode
+        </Button>
+        <Button 
+          onClick={() => handlePresetClick('dramatic')}
+          className="bg-purple-500 hover:bg-purple-700 text-white"
+        >
+          Dramatic Mode
+        </Button>
+      </div>
+
+      <Button
+        onClick={() => setShowAdvanced(!showAdvanced)}
+        className="bg-gray-500 hover:bg-gray-700 text-white mb-4"
+      >
+        {showAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings'}
+      </Button>
+
+      {showAdvanced && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Initial Pause (ms)
+            </label>
+            <Input
+              type="number"
+              value={config.initialPause}
+              onChange={(e) => handleConfigChange('initialPause', e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Zoom Duration (ms)
+            </label>
+            <Input
+              type="number"
+              value={config.zoomDuration}
+              onChange={(e) => handleConfigChange('zoomDuration', e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Pre-open Pause (ms)
+            </label>
+            <Input
+              type="number"
+              value={config.preopenPause}
+              onChange={(e) => handleConfigChange('preopenPause', e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reveal Duration (ms)
+            </label>
+            <Input
+              type="number"
+              value={config.revealDuration}
+              onChange={(e) => handleConfigChange('revealDuration', e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Final Pause (ms)
+            </label>
+            <Input
+              type="number"
+              value={config.finalPause}
+              onChange={(e) => handleConfigChange('finalPause', e.target.value)}
+              className="w-full"
+            />
+          </div>
+        </div>
+      )}
+
+      <Button
+        onClick={() => onSave(config)}
+        className="bg-green-600 hover:bg-green-700 text-white mt-4"
+      >
+        Apply Animation Settings
+      </Button>
+    </div>
+  );
+};
+
 const AdminInterface = () => {
   const [gameState, setGameState] = useState({
     cases: {},
@@ -30,7 +177,6 @@ const AdminInterface = () => {
 
     const handleReset = (data) => {
       console.log('Game reset received:', data);
-      // Ensure we completely reset the game state
       setGameState({
         cases: {},
         selectedCase: null,
@@ -95,7 +241,6 @@ const AdminInterface = () => {
     setCustomOffer('');
     setError('');
     
-    // Force immediate UI reset
     setGameState({
       cases: {},
       selectedCase: null,
@@ -137,6 +282,18 @@ const AdminInterface = () => {
     }
   };
 
+  const handleCaseClick = (caseNumber) => {
+    if (gameState.phase === 'case_selection') {
+      // For initial case selection
+      socket.emit('select_case', { caseNumber });
+    } else if (gameState.phase === 'opening_cases') {
+      // For opening cases during rounds
+      if (gameState.selectedCase && caseNumber !== gameState.selectedCase) {
+        socket.emit('open_case', { caseNumber });
+      }
+    }
+  };
+
   const handleAdminDealResponse = (accepted) => {
     if (gameState.phase !== 'offer_phase') {
       console.log('Cannot handle offer - wrong phase');
@@ -150,6 +307,10 @@ const AdminInterface = () => {
     if (gameState.selectedCase && caseNumber !== gameState.selectedCase && gameState.phase === 'opening_cases') {
       socket.emit('open_case', { caseNumber });
     }
+  };
+
+  const handleAnimationConfigSave = (config) => {
+    socket.emit('update_animation_config', { config });
   };
 
   const renderGameStatus = () => {
@@ -282,9 +443,15 @@ const AdminInterface = () => {
 
         {gameState.gameStarted && (
           <>
+            <AnimationConfig onSave={handleAnimationConfigSave} />
             {renderOfferControls()}
             
             <div className="bg-white p-6 rounded-lg shadow-md">
+              <h3 className="text-xl font-bold mb-4">
+                {gameState.phase === 'case_selection' 
+                  ? 'Select Initial Case' 
+                  : 'Case Controls'}
+              </h3>
               <div className="grid grid-cols-6 gap-4">
                 {Array.from({ length: 26 }, (_, i) => {
                   const caseNumber = (i + 1).toString();
@@ -293,18 +460,26 @@ const AdminInterface = () => {
                   return (
                     <Button
                       key={caseNumber}
-                      onClick={() => openCase(caseNumber)}
+                      onClick={() => handleCaseClick(caseNumber)}
                       disabled={
                         !gameState.gameStarted || 
-                        !gameState.selectedCase || 
-                        caseData.opened || 
-                        caseNumber === gameState.selectedCase ||
-                        gameState.phase !== 'opening_cases'
+                        (gameState.phase !== 'case_selection' && (
+                          !gameState.selectedCase || 
+                          caseData.opened || 
+                          caseNumber === gameState.selectedCase ||
+                          gameState.phase !== 'opening_cases'
+                        ))
                       }
                       className={`
-                        ${caseData.opened ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-700'}
-                        ${caseNumber === gameState.selectedCase && gameState.gameStarted ? 'ring-4 ring-yellow-400' : ''}
-                        text-white p-4 h-auto min-h-[80px] relative
+                        relative group transition-all duration-300
+                        ${caseData.opened 
+                          ? 'bg-gray-400' 
+                          : gameState.phase === 'case_selection'
+                            ? 'bg-green-500 hover:bg-green-600'
+                            : 'bg-blue-500 hover:bg-blue-700'
+                        }
+                        ${caseNumber === gameState.selectedCase ? 'ring-4 ring-yellow-400' : ''}
+                        text-white p-4 h-auto min-h-[80px]
                       `}
                     >
                       <div className="text-center">
@@ -312,6 +487,11 @@ const AdminInterface = () => {
                         {caseData.opened && (
                           <div className="text-sm mt-1">
                             ${caseData.value?.toLocaleString()}
+                          </div>
+                        )}
+                        {gameState.phase === 'case_selection' && !gameState.selectedCase && (
+                          <div className="text-xs mt-1 text-white/80">
+                            Click to Select
                           </div>
                         )}
                       </div>
@@ -335,5 +515,4 @@ const AdminInterface = () => {
     </div>
   );
 };
-
 export default AdminInterface;
