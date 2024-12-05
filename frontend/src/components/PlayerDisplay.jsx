@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Button } from './ui/button';
+import { Button } from "./ui/button";
 import { socket } from '../services/socketService';
-import { IoMdBriefcase } from "react-icons/io";
+import { Briefcase } from "lucide-react";
 
 const formatMoney = (amount) => {
   if (amount >= 1000000) return `$${(amount/1000000).toFixed(1)}M`;
@@ -9,7 +9,7 @@ const formatMoney = (amount) => {
   return `$${amount}`;
 };
 
-const ValuesBoard = ({ cases, showValues = true, side }) => {
+const ValuesBoard = ({ cases, side }) => {
   const leftValues = [
     0.01, 1, 5, 10, 25, 50, 75, 100,
     200, 300, 400, 500, 750, 1000
@@ -45,6 +45,96 @@ const ValuesBoard = ({ cases, showValues = true, side }) => {
   );
 };
 
+const CaseOpeningCutscene = ({ caseNumber, value, onComplete }) => {
+  const [stage, setStage] = useState('initial');
+  const [showDramaPulse, setShowDramaPulse] = useState(false);
+
+  useEffect(() => {
+    const sequence = async () => {
+      setShowDramaPulse(true);
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      setStage('zoom');
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      
+      setShowDramaPulse(true);
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      setStage('open');
+      setShowDramaPulse(false);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      setStage('complete');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      onComplete();
+    };
+    
+    sequence();
+  }, [onComplete]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90">
+      <div className={`absolute inset-0 bg-gradient-radial from-yellow-400/10 via-transparent to-transparent transition-all duration-1000
+        ${showDramaPulse ? 'opacity-40' : 'opacity-20'}
+        ${stage === 'zoom' ? 'scale-120' : 'scale-100'}`}
+      />
+
+      <div className={`relative transition-all duration-1000
+        ${stage === 'zoom' ? 'scale-150 -translate-y-8' : 'scale-100 translate-y-0'}
+        ${stage === 'open' ? 'rotate-y-180' : 'rotate-y-0'}`}
+      >
+        {/* Case front */}
+        <div className={`w-48 h-64 bg-gradient-to-br from-yellow-500 to-yellow-700 rounded-xl flex flex-col items-center justify-center shadow-2xl
+          ${stage === 'open' ? 'backface-hidden' : ''}`}
+        >
+          <Briefcase className="w-16 h-16 text-white mb-4" />
+          <div className={`text-4xl font-bold text-white transition-transform duration-1000
+            ${showDramaPulse ? 'scale-110' : 'scale-100'}`}
+          >
+            #{caseNumber}
+          </div>
+        </div>
+        
+        {/* Case back (value reveal) */}
+        <div className="absolute inset-0 w-48 h-64 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex flex-col items-center justify-center backface-hidden rotate-y-180">
+          <div className="text-xl font-bold text-white mb-4">Case #{caseNumber}</div>
+          <div className={`text-4xl font-bold text-yellow-400 transition-all duration-800
+            ${stage === 'open' ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}`}
+          >
+            ${value?.toLocaleString()}
+          </div>
+        </div>
+      </div>
+
+      {/* Dramatic rays */}
+      <div className={`absolute inset-0 pointer-events-none overflow-hidden transition-opacity duration-1000
+        ${stage === 'open' ? 'opacity-100' : 'opacity-0'}`}
+      >
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div
+            key={i}
+            className={`absolute top-1/2 left-1/2 h-[200vh] w-2 bg-gradient-to-t from-yellow-400/40 to-transparent transition-transform duration-1000
+              origin-top`}
+            style={{
+              transform: `rotate(${i * 30}deg) scaleY(${stage === 'open' ? 1 : 0})`,
+              transitionDelay: `${i * 50}ms`
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Suspense text */}
+      <div className={`absolute bottom-20 left-0 right-0 text-center transition-all duration-1000
+        ${showDramaPulse ? 'opacity-100 scale-105' : 'opacity-0 scale-100'}`}
+      >
+        <div className="text-2xl font-bold text-yellow-400">
+          {stage === 'initial' ? "Ready to reveal..." : "Opening case..."}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PlayerDisplay = () => {
   const [gameState, setGameState] = useState({
     cases: {},
@@ -66,6 +156,7 @@ const PlayerDisplay = () => {
   });
 
   const previousCases = useRef({});
+  const pendingStateUpdate = useRef(null);
 
   useEffect(() => {
     const handleStateUpdate = (data) => {
@@ -74,6 +165,8 @@ const PlayerDisplay = () => {
       if (data.phase === 'deal_taken') {
         setShowCelebration(true);
         setTimeout(() => setShowCelebration(false), 5000);
+        setGameState(data);
+        return;
       }
 
       const newlyOpenedCase = Object.entries(data.cases || {}).find(
@@ -82,17 +175,13 @@ const PlayerDisplay = () => {
 
       if (newlyOpenedCase) {
         const [caseNumber, caseData] = newlyOpenedCase;
+        pendingStateUpdate.current = data;
+        
         setOpeningAnimation({
           isPlaying: true,
           caseNumber,
           value: caseData.value
         });
-        
-        setTimeout(() => {
-          setGameState(data);
-          previousCases.current = data.cases;
-          setOpeningAnimation({ isPlaying: false, caseNumber: null, value: null });
-        }, 3000);
       } else {
         setGameState(data);
         previousCases.current = data.cases;
@@ -118,6 +207,19 @@ const PlayerDisplay = () => {
     };
   }, []);
 
+  const handleAnimationComplete = () => {
+    if (pendingStateUpdate.current) {
+      setGameState(pendingStateUpdate.current);
+      previousCases.current = pendingStateUpdate.current.cases;
+      pendingStateUpdate.current = null;
+    }
+    setOpeningAnimation({
+      isPlaying: false,
+      caseNumber: null,
+      value: null
+    });
+  };
+
   const selectInitialCase = (caseNumber) => {
     if (gameState.phase === 'case_selection') {
       socket.emit('select_case', { caseNumber });
@@ -131,7 +233,7 @@ const PlayerDisplay = () => {
 
   const renderGameHeader = () => (
     <div className="relative">
-      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-blue-900/50 to-transparent pointer-events-none"></div>
+      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-blue-900/50 to-transparent pointer-events-none" />
       <div className="text-center pt-8 pb-4 relative">
         <h1 className="text-6xl font-bold text-white mb-4 text-shadow-lg">
           Deal or No Deal
@@ -174,7 +276,7 @@ const PlayerDisplay = () => {
         {gameState.selectedCase && gameState.phase !== 'case_selection' && (
           <div className="text-2xl text-yellow-400 flex items-center justify-center gap-2">
             <span>Your Case:</span>
-            <IoMdBriefcase className="w-8 h-8" />
+            <Briefcase className="w-8 h-8" />
             <span>#{gameState.selectedCase}</span>
           </div>
         )}
@@ -220,7 +322,7 @@ const PlayerDisplay = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="bg-black/30 p-6 rounded-xl backdrop-blur-sm">
-            <ValuesBoard cases={gameState.cases} side="left"/>
+            <ValuesBoard cases={gameState.cases} side="left" />
           </div>
 
           <div className="bg-black/30 p-6 rounded-xl backdrop-blur-sm">
@@ -247,7 +349,7 @@ const PlayerDisplay = () => {
                       flex flex-col items-center justify-center p-2
                     `}
                   >
-                    <IoMdBriefcase className="w-8 h-8 mb-1" />
+                    <Briefcase className="w-8 h-8 mb-1" />
                     <div className="font-bold text-sm">{caseNumber}</div>
                     {caseData.opened && (
                       <div className="text-sm font-bold text-yellow-300 mt-1">
@@ -261,7 +363,7 @@ const PlayerDisplay = () => {
           </div>
 
           <div className="bg-black/30 p-6 rounded-xl backdrop-blur-sm">
-            <ValuesBoard cases={gameState.cases} side="right"/>
+            <ValuesBoard cases={gameState.cases} side="right" />
           </div>
         </div>
 
@@ -290,20 +392,11 @@ const PlayerDisplay = () => {
         )}
 
         {openingAnimation.isPlaying && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-            <div className="relative transform transition-all duration-1000 scale-150">
-              <div className="w-48 h-64 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-xl flex flex-col items-center justify-center shadow-2xl animate-reveal">
-                <IoMdBriefcase className="w-20 h-20 mb-4 text-white" />
-                <div className="text-4xl font-bold text-white mb-4">
-                  #{openingAnimation.caseNumber}
-                </div>
-                <div className="text-3xl font-bold text-yellow-300 animate-bounce">
-                  ${openingAnimation.value?.toLocaleString()}
-                </div>
-              </div>
-              <div className="absolute inset-0 bg-gradient-radial from-yellow-400/20 to-transparent animate-pulse" />
-            </div>
-          </div>
+          <CaseOpeningCutscene
+            caseNumber={openingAnimation.caseNumber}
+            value={openingAnimation.value}
+            onComplete={handleAnimationComplete}
+          />
         )}
       </div>
     </div>
